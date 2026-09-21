@@ -1,0 +1,107 @@
+{
+  "TikTok Fire v3": {
+    "video": {
+      "speed": 1.1,
+      "scale": 110,
+      "volume_db": 20.0
+    },
+    "effect": {
+      "name": "Ngọn lửa",
+      "speed": 13,
+      "air": 35
+    },
+    "audio": {
+      "voice_sharpen": true,
+      "vocal_sep": false,
+      "bgm_path": "",
+      "bgm_db": 0.0
+    },
+    "overlay": {
+      "path": "",
+      "chroma_enabled": true,
+      "chroma_intensity": 70
+    },
+    "color": {
+      "temperature": 0,
+      "tone": 0,
+      "saturation": 0,
+      "contrast": 0,
+      "shadow": 0
+    },
+    "output": {
+      "mode": "cloud",
+      "resolution": "1080p",
+      "fps": 30
+    }
+  },
+  "Movie Recap Soft": {
+    "video": {
+      "speed": 1.0,
+      "scale": 105,
+      "volume_db": 10.0
+    },
+    "effect": {
+      "name": "Sương mù",
+      "speed": 8,
+      "air": 25
+    },
+    "audio": {
+      "voice_sharpen": true,
+      "vocal_sep": true,
+      "bgm_path": "",
+      "bgm_db": -6.0
+    },
+    "overlay": {
+      "path": "",
+      "chroma_enabled": true,
+      "chroma_intensity": 70
+    },
+    "color": {
+      "temperature": 10,
+      "tone": -5,
+      "saturation": 5,
+      "contrast": 10,
+      "shadow": -5
+    },
+    "output": {
+      "mode": "cloud",
+      "resolution": "1080p",
+      "fps": 30
+    }
+  },
+  "Glitter Shorts": {
+    "video": {
+      "speed": 1.15,
+      "scale": 115,
+      "volume_db": 15.0
+    },
+    "effect": {
+      "name": "Mưa kim tuyến",
+      "speed": 20,
+      "air": 40
+    },
+    "audio": {
+      "voice_sharpen": false,
+      "vocal_sep": false,
+      "bgm_path": "",
+      "bgm_db": 0.0
+    },
+    "overlay": {
+      "path": "",
+      "chroma_enabled": false,
+      "chroma_intensity": 70
+    },
+    "color": {
+      "temperature": 5,
+      "tone": 5,
+      "saturation": 10,
+      "contrast": 5,
+      "shadow": 0
+    },
+    "output": {
+      "mode": "cloud",
+      "resolution": "1080p",
+      "fps": 60
+    }
+  }
+}

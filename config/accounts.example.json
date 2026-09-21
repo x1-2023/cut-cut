@@ -1,0 +1,9 @@
+﻿[
+  {
+    "email": "example@domain.com",
+    "password": "your_password",
+    "note": "Pro Account 1",
+    "pro_expire_time": 0,
+    "last_login": 0
+  }
+]

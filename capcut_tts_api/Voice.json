@@ -1,0 +1,82 @@
+[
+  {
+    "voice_type": "BV421_vivn_streaming",
+    "display_name": "Nữ Ngọt Ngào (Việt Nam)",
+    "resource_id": "7102355709945188865",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV074_streaming",
+    "display_name": "Kể Chuyện Truyền Cảm (Việt Nam)",
+    "resource_id": "7102355709945188865",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV075_streaming",
+    "display_name": "Nam Truyền Cảm (Việt Nam)",
+    "resource_id": "7102355709945188866",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV560_streaming",
+    "display_name": "Nữ Miền Bắc Chuẩn (Việt Nam)",
+    "resource_id": "7102355709945188867",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV561_streaming",
+    "display_name": "Nam Miền Nam Tự Nhiên (Việt Nam)",
+    "resource_id": "7102355709945188868",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV073_streaming",
+    "display_name": "Thanh Niên Năng Động (Việt Nam)",
+    "resource_id": "7102355709945188869",
+    "lang": "vi-VN",
+    "lan": "vi",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV001_streaming",
+    "display_name": "Jessie - Energetic Female (English)",
+    "resource_id": "7102355709945188870",
+    "lang": "en-US",
+    "lan": "en",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV002_streaming",
+    "display_name": "Deep Storyteller Male (English)",
+    "resource_id": "7102355709945188871",
+    "lang": "en-US",
+    "lan": "en",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV500_streaming",
+    "display_name": "Cinema Movie Voice (English)",
+    "resource_id": "7102355709945188873",
+    "lang": "en-US",
+    "lan": "en",
+    "captured_at": "2026"
+  },
+  {
+    "voice_type": "BV501_streaming",
+    "display_name": "Soft Calm Female (English)",
+    "resource_id": "7102355709945188872",
+    "lang": "en-US",
+    "lan": "en",
+    "captured_at": "2026"
+  }
+]

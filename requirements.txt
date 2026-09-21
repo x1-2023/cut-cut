@@ -1,0 +1,4 @@
+# CapCut Automation Studio - Dependencies
+customtkinter>=5.2.0
+requests>=2.31.0
+playwright>=1.40.0

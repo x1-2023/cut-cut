@@ -1,0 +1,30 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Credentials & Active Sessions (DO NOT COMMIT)
+config/session.json
+config/accounts.json
+
+# Media & Render Output
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.flv
+*.wav
+*.mp3
+rendered/
+temp_audio/
+.chunks_*/
+*.zip
+*.har
+
+# Environments & IDE
+.venv/
+env/
+venv/
+.idea/
+.vscode/
+*.log
