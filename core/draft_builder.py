@@ -875,6 +875,7 @@ def render_draft_cloud(
     fps: int = 30,
     auto_caption: bool = False,
     caption_language: str = "vi-VN",
+    caption_style: str = "TikTok Viral (Vàng viền đen)",
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, str], None]] = None,
 ) -> str:
@@ -882,7 +883,7 @@ def render_draft_cloud(
     Renders draft_content on CapCut Cloud without opening CapCut PC.
     1. Uploads primary video, overlay video, and BGM to CapCut TOS VOD.
     2. Maps local file paths in draft_content to cloud virtual paths (/<md5>.mp4).
-    3. If auto_caption enabled, recognizes speech via CapCut Cloud ASR and injects subtitles.
+    3. If auto_caption enabled, recognizes speech via CapCut Cloud ASR and injects subtitles with style.
     4. Saves Cloud Draft via CapCut Web API.
     5. Triggers Cloud Render task and polls until MP4 download completes.
     """
@@ -968,8 +969,10 @@ def render_draft_cloud(
             captioner = CapCutAutoCaption()
             utterances = captioner.transcribe(vp, language=caption_language, log_cb=log)
             if utterances:
-                draft_content = captioner.inject_subtitles_to_draft(draft_content, utterances)
-                log(f"[+] Đã gắn {len(utterances)} đoạn phụ đề vào timeline thành công.")
+                draft_content = captioner.inject_subtitles_to_draft(
+                    draft_content, utterances, style_name=caption_style
+                )
+                log(f"[+] Đã gắn {len(utterances)} đoạn phụ đề (Style: {caption_style}) vào timeline thành công.")
             else:
                 log("[i] Không phát hiện giọng nói trong video (bỏ qua gắn phụ đề).")
         except Exception as c_err:

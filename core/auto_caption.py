@@ -34,6 +34,75 @@ LANGUAGE_MAP = {
 
 LANGUAGE_CODES = {v: k for k, v in LANGUAGE_MAP.items()}
 
+SUBTITLE_STYLES: Dict[str, Dict[str, Any]] = {
+    "TikTok Viral (Vàng viền đen)": {
+        "text_color": "#FFE600",
+        "stroke_color": "#000000",
+        "stroke_width": 25,
+        "font_size": 6.5,
+        "has_shadow": True,
+        "shadow_color": "#000000",
+        "shadow_alpha": 0.85,
+        "background_color": "",
+        "background_alpha": 0.0,
+    },
+    "Cổ điển (Trắng viền đen)": {
+        "text_color": "#FFFFFF",
+        "stroke_color": "#000000",
+        "stroke_width": 18,
+        "font_size": 6.0,
+        "has_shadow": False,
+        "shadow_color": "",
+        "shadow_alpha": 0.0,
+        "background_color": "",
+        "background_alpha": 0.0,
+    },
+    "Nổi bật (Đỏ viền trắng)": {
+        "text_color": "#FF2A55",
+        "stroke_color": "#FFFFFF",
+        "stroke_width": 16,
+        "font_size": 6.5,
+        "has_shadow": True,
+        "shadow_color": "#000000",
+        "shadow_alpha": 0.8,
+        "background_color": "",
+        "background_alpha": 0.0,
+    },
+    "Cyber Neon (Xanh dạ quang)": {
+        "text_color": "#00FFCC",
+        "stroke_color": "#051622",
+        "stroke_width": 22,
+        "font_size": 6.2,
+        "has_shadow": True,
+        "shadow_color": "#003B46",
+        "shadow_alpha": 0.9,
+        "background_color": "",
+        "background_alpha": 0.0,
+    },
+    "Hộp tin tức (Nền đen chữ trắng)": {
+        "text_color": "#FFFFFF",
+        "stroke_color": "#000000",
+        "stroke_width": 0,
+        "font_size": 5.5,
+        "has_shadow": False,
+        "shadow_color": "",
+        "shadow_alpha": 0.0,
+        "background_color": "#000000",
+        "background_alpha": 0.85,
+    },
+    "Vàng hoàng kim (Gold Luxury)": {
+        "text_color": "#FFB800",
+        "stroke_color": "#1A0F00",
+        "stroke_width": 20,
+        "font_size": 6.2,
+        "has_shadow": True,
+        "shadow_color": "#331E00",
+        "shadow_alpha": 0.8,
+        "background_color": "",
+        "background_alpha": 0.0,
+    },
+}
+
 
 class CapCutAutoCaption:
     """Manages CapCut Cloud speech recognition and subtitle draft injection."""
@@ -86,10 +155,11 @@ class CapCutAutoCaption:
     def inject_subtitles_to_draft(
         draft_content: Dict[str, Any],
         utterances: List[Dict[str, Any]],
-        font_size: float = 6.0,
-        text_color: str = "#ffffff",
-        stroke_color: str = "#000000",
-        stroke_width: int = 15,
+        style_name: str = "TikTok Viral (Vàng viền đen)",
+        font_size: Optional[float] = None,
+        text_color: Optional[str] = None,
+        stroke_color: Optional[str] = None,
+        stroke_width: Optional[int] = None,
         y_position: float = -0.7,
     ) -> Dict[str, Any]:
         """
@@ -98,15 +168,27 @@ class CapCutAutoCaption:
         if not utterances:
             return draft_content
 
+        preset = SUBTITLE_STYLES.get(style_name, SUBTITLE_STYLES["TikTok Viral (Vàng viền đen)"])
+
+        f_size = font_size if font_size is not None else preset["font_size"]
+        t_color = text_color if text_color is not None else preset["text_color"]
+        s_color = stroke_color if stroke_color is not None else preset["stroke_color"]
+        s_width = stroke_width if stroke_width is not None else preset["stroke_width"]
+        has_sh = preset.get("has_shadow", False)
+        sh_color = preset.get("shadow_color", "#000000")
+        sh_alpha = preset.get("shadow_alpha", 0.8)
+        bg_color = preset.get("background_color", "")
+        bg_alpha = preset.get("background_alpha", 0.0)
+
         materials = draft_content.setdefault("materials", {})
         texts_list = materials.setdefault("texts", [])
         tracks = draft_content.setdefault("tracks", [])
 
         # Color conversion for fill style [r, g, b] in [0, 1]
         try:
-            r = int(text_color[1:3], 16) / 255.0
-            g = int(text_color[3:5], 16) / 255.0
-            b = int(text_color[5:7], 16) / 255.0
+            r = int(t_color[1:3], 16) / 255.0
+            g = int(t_color[3:5], 16) / 255.0
+            b = int(t_color[5:7], 16) / 255.0
         except Exception:
             r, g, b = 1.0, 1.0, 1.0
 
@@ -124,7 +206,7 @@ class CapCutAutoCaption:
                 "text": text_str,
                 "styles": [
                     {
-                        "size": font_size,
+                        "size": f_size,
                         "fill": {
                             "alpha": 1.0,
                             "content": {
@@ -148,29 +230,29 @@ class CapCutAutoCaption:
                 "content": json.dumps(content_obj, ensure_ascii=False),
                 "base_content": "",
                 "global_alpha": 1.0,
-                "background_color": "",
-                "background_alpha": 1.0,
-                "background_style": 0,
+                "background_color": bg_color,
+                "background_alpha": bg_alpha,
+                "background_style": 1 if bg_color else 0,
                 "layer_weight": 0,
                 "letter_spacing": 0,
                 "line_spacing": 0.02,
-                "has_shadow": False,
-                "shadow_color": "",
-                "shadow_alpha": 0.8,
+                "has_shadow": has_sh,
+                "shadow_color": sh_color,
+                "shadow_alpha": sh_alpha,
                 "shadow_smoothing": 1.0,
                 "shadow_distance": 8.0,
                 "shadow_angle": -45.0,
-                "border_alpha": 1.0,
-                "border_color": stroke_color,
-                "border_width": stroke_width,
+                "border_alpha": 1.0 if s_width > 0 else 0.0,
+                "border_color": s_color,
+                "border_width": s_width,
                 "style_name": "",
-                "text_color": text_color,
+                "text_color": t_color,
                 "text_preset_resource_id": "",
                 "check_flag": 7,
                 "font_id": "",
                 "font_path": "",
                 "font_name": "",
-                "font_size": font_size,
+                "font_size": f_size,
                 "alignment": 1,
                 "sub_type": 0,
             }

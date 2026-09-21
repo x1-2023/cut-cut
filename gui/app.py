@@ -428,21 +428,21 @@ class CapCutStudioApp(ctk.CTk):
 
         # 6.6 Section: Auto Captions (Phụ đề giọng nói)
         self.f_caption_content = self._create_accordion_section(recipe_card, "Auto Captions (Phụ đề giọng nói ASR)", default_open=True)
-        cap_f = ctk.CTkFrame(self.f_caption_content, fg_color="transparent")
-        cap_f.pack(fill="x", pady=6)
+        cap_f1 = ctk.CTkFrame(self.f_caption_content, fg_color="transparent")
+        cap_f1.pack(fill="x", pady=(4, 2))
 
         self.chk_auto_caption = ctk.CTkCheckBox(
-            cap_f,
+            cap_f1,
             text="Tự động nhận diện phụ đề (Auto Captions)",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color="#38bdf8",
             command=self._update_live_summary,
         )
-        self.chk_auto_caption.pack(side="left", padx=(0, 15))
+        self.chk_auto_caption.pack(side="left", padx=(0, 20))
 
-        ctk.CTkLabel(cap_f, text="Ngôn ngữ:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(cap_f1, text="Ngôn ngữ:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 6))
         self.caption_lang_combo = ctk.CTkComboBox(
-            cap_f,
+            cap_f1,
             values=[
                 "Tiếng Việt",
                 "Tiếng Anh",
@@ -457,12 +457,33 @@ class CapCutStudioApp(ctk.CTk):
                 "Tiếng Thái",
                 "Tiếng Indonesia",
             ],
-            width=160,
+            width=150,
             height=28,
             command=lambda v: self._update_live_summary(),
         )
         self.caption_lang_combo.pack(side="left")
         self.caption_lang_combo.set("Tiếng Việt")
+
+        cap_f2 = ctk.CTkFrame(self.f_caption_content, fg_color="transparent")
+        cap_f2.pack(fill="x", pady=(4, 6))
+
+        ctk.CTkLabel(cap_f2, text="Style / Hiệu ứng chữ:", width=130, anchor="w", font=ctk.CTkFont(size=12)).pack(side="left")
+        self.caption_style_combo = ctk.CTkComboBox(
+            cap_f2,
+            values=[
+                "TikTok Viral (Vàng viền đen)",
+                "Cổ điển (Trắng viền đen)",
+                "Nổi bật (Đỏ viền trắng)",
+                "Cyber Neon (Xanh dạ quang)",
+                "Hộp tin tức (Nền đen chữ trắng)",
+                "Vàng hoàng kim (Gold Luxury)",
+            ],
+            width=230,
+            height=28,
+            command=lambda v: self._update_live_summary(),
+        )
+        self.caption_style_combo.pack(side="left", fill="x", expand=True, padx=(4, 0))
+        self.caption_style_combo.set("TikTok Viral (Vàng viền đen)")
 
         # ======================================================================
         # RIGHT ~35%: Live Job Summary, Output Mode, Action Button
@@ -674,8 +695,9 @@ class CapCutStudioApp(ctk.CTk):
             color_txt = "Custom" if any(v != 0 for v in c_vals) else "Default"
 
             cap_on = getattr(self, "chk_auto_caption", None) and self.chk_auto_caption.get()
-            cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get()
-            cap_txt = f"[{cap_lang}]" if cap_on else "None"
+            cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get() or "Tiếng Việt"
+            cap_style = getattr(self, "caption_style_combo", None) and self.caption_style_combo.get() or "TikTok Viral"
+            cap_txt = f"[{cap_lang} · {cap_style}]" if cap_on else "None"
 
             out_mode = self.export_mode.get()
             if out_mode == "cloud":
@@ -1047,8 +1069,24 @@ class CapCutStudioApp(ctk.CTk):
             width=135,
             height=28,
         )
-        self.batch_caption_lang_combo.pack(side="left", padx=(0, 10))
+        self.batch_caption_lang_combo.pack(side="left", padx=(0, 6))
         self.batch_caption_lang_combo.set("Tiếng Việt")
+
+        self.batch_caption_style_combo = ctk.CTkComboBox(
+            r3,
+            values=[
+                "TikTok Viral (Vàng viền đen)",
+                "Cổ điển (Trắng viền đen)",
+                "Nổi bật (Đỏ viền trắng)",
+                "Cyber Neon (Xanh dạ quang)",
+                "Hộp tin tức (Nền đen chữ trắng)",
+                "Vàng hoàng kim (Gold Luxury)",
+            ],
+            width=175,
+            height=28,
+        )
+        self.batch_caption_style_combo.pack(side="left", padx=(0, 6))
+        self.batch_caption_style_combo.set("TikTok Viral (Vàng viền đen)")
 
         # Main Action Buttons
         self.btn_batch_start = ctk.CTkButton(
@@ -1341,6 +1379,7 @@ class CapCutStudioApp(ctk.CTk):
 
                 b_cap = getattr(self, "batch_caption_var", None) and bool(self.batch_caption_var.get())
                 b_lang = getattr(self, "batch_caption_lang_combo", None) and self.batch_caption_lang_combo.get() or "Tiếng Việt"
+                b_style = getattr(self, "batch_caption_style_combo", None) and self.batch_caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
 
                 auth_job = get_auth_for_job()
                 downloaded = render_draft_cloud(
@@ -1351,6 +1390,7 @@ class CapCutStudioApp(ctk.CTk):
                     fps=fps,
                     auto_caption=b_cap,
                     caption_language=b_lang,
+                    caption_style=b_style,
                     log_cb=self._log,
                     progress_cb=sub_prog_cb,
                 )
@@ -2063,6 +2103,7 @@ class CapCutStudioApp(ctk.CTk):
                             raise RuntimeError(f"Lỗi tạo draft: {err}")
                         auto_cap = getattr(self, "chk_auto_caption", None) and bool(self.chk_auto_caption.get())
                         cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get() or "Tiếng Việt"
+                        cap_style = getattr(self, "caption_style_combo", None) and self.caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
 
                         downloaded = render_draft_cloud(
                             vp=vp,
@@ -2074,6 +2115,7 @@ class CapCutStudioApp(ctk.CTk):
                             fps=fps,
                             auto_caption=auto_cap,
                             caption_language=cap_lang,
+                            caption_style=cap_style,
                             log_cb=self._log,
                             progress_cb=render_sub_cb,
                         )
