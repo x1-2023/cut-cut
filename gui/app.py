@@ -2108,7 +2108,7 @@ class CapCutStudioApp(ctk.CTk):
                             vp=vp,
                             draft_params=draft_params,
                             output_mp4=out_mp4,
-                            chunk_duration=60,
+                            chunk_duration=1200,
                             max_chunk_workers=min(2, n_threads),
                             definition=definition,
                             fps=fps,

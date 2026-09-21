@@ -1075,12 +1075,35 @@ def render_video_auto_chunked_cloud(
     dur = get_media_duration(str(in_file))
     log(f"[*] Phân tích video: {in_file.name} | Thời lượng: {dur:.1f}s ({dur/60:.1f} phút)")
 
-    if dur <= (chunk_duration + 10):
-        # Short video: direct 1-task cloud render
-        log(f"[*] Video ngắn (<= {chunk_duration+10}s). Render trực tiếp 1 task Cloud...")
+    full_utterances = []
+    if auto_caption:
+        log(f"[BƯỚC 1.5/4] Đang gửi âm thanh lên CapCut Cloud AI nhận dạng phụ đề ({caption_language})...")
+        if progress_cb:
+            progress_cb(15, f"Đang nhận diện giọng nói ({caption_language})...")
+        try:
+            from core.auto_caption import CapCutAutoCaption
+            captioner = CapCutAutoCaption()
+            full_utterances = captioner.transcribe(str(in_file), language=caption_language, log_cb=log)
+            if full_utterances:
+                log(f"[+] Nhận diện thành công: {len(full_utterances)} câu phụ đề thoại.")
+            else:
+                log("[i] Không phát hiện giọng nói trong video (bỏ qua gắn phụ đề).")
+        except Exception as c_err:
+            log(f"[!] Cảnh báo: Nhận diện phụ đề gặp sự cố ({c_err}), tiếp tục render video...")
+
+    if dur <= (chunk_duration + 30):
+        # Video length <= chunk limit: direct 1-task cloud render
+        log(f"[*] Thời lượng video ({dur:.1f}s <= {chunk_duration+30}s). Render trực tiếp 1 task Cloud...")
         draft_content, err, _ = make_draft(vp=str(in_file), **draft_params)
         if err:
             raise RuntimeError(f"Lỗi tạo draft: {err}")
+        if full_utterances:
+            from core.auto_caption import CapCutAutoCaption
+            draft_content = CapCutAutoCaption.inject_subtitles_to_draft(
+                draft_content, full_utterances, style_name=caption_style
+            )
+            log(f"[+] Đã gắn {len(full_utterances)} đoạn phụ đề (Style: {caption_style}) vào timeline.")
+
         return render_draft_cloud(
             vp=str(in_file),
             draft_content=draft_content,
@@ -1089,7 +1112,7 @@ def render_video_auto_chunked_cloud(
             bgm_path=draft_params.get("bgm_path", ""),
             definition=definition,
             fps=fps,
-            auto_caption=auto_caption,
+            auto_caption=False,
             caption_language=caption_language,
             caption_style=caption_style,
             log_cb=log_cb,
@@ -1124,6 +1147,27 @@ def render_video_auto_chunked_cloud(
         c_draft, c_err, _ = make_draft(vp=c_path, **c_params)
         if c_err:
             raise RuntimeError(f"Lỗi tạo draft cho chunk {c_idx}: {c_err}")
+
+        # Inject slice of subtitles for this chunk
+        if full_utterances:
+            from core.auto_caption import CapCutAutoCaption
+            c_start_s = float(chunk_info.get("start", c_idx * chunk_duration))
+            c_dur_s = float(chunk_info.get("duration", chunk_duration))
+            c_start_ms = int(c_start_s * 1000)
+            c_end_ms = int((c_start_s + c_dur_s) * 1000)
+            chunk_utts = []
+            for u in full_utterances:
+                if u["start_ms"] >= c_start_ms and u["start_ms"] < c_end_ms:
+                    chunk_utts.append({
+                        "text": u["text"],
+                        "start_ms": max(0, u["start_ms"] - c_start_ms),
+                        "end_ms": max(0, u["end_ms"] - c_start_ms),
+                        "words": u.get("words", []),
+                    })
+            if chunk_utts:
+                c_draft = CapCutAutoCaption.inject_subtitles_to_draft(
+                    c_draft, chunk_utts, style_name=caption_style
+                )
 
         def chunk_progress_cb(p: int, s_msg: str):
             with lock:
