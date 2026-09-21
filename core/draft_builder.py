@@ -873,6 +873,8 @@ def render_draft_cloud(
     bgm_path: str = "",
     definition: str = "1080p",
     fps: int = 30,
+    auto_caption: bool = False,
+    caption_language: str = "vi-VN",
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, str], None]] = None,
 ) -> str:
@@ -880,8 +882,9 @@ def render_draft_cloud(
     Renders draft_content on CapCut Cloud without opening CapCut PC.
     1. Uploads primary video, overlay video, and BGM to CapCut TOS VOD.
     2. Maps local file paths in draft_content to cloud virtual paths (/<md5>.mp4).
-    3. Saves Cloud Draft via CapCut Web API.
-    4. Triggers Cloud Render task and polls until MP4 download completes.
+    3. If auto_caption enabled, recognizes speech via CapCut Cloud ASR and injects subtitles.
+    4. Saves Cloud Draft via CapCut Web API.
+    5. Triggers Cloud Render task and polls until MP4 download completes.
     """
     def log(msg: str):
         print(msg)
@@ -954,6 +957,23 @@ def render_draft_cloud(
         draft_content["materials"]["videos"][0]["path"] = v_path_main
         draft_content["materials"]["videos"][0]["version"] = 400000
         draft_content["materials"]["videos"][0]["new_version"] = "127.0.0"
+
+    # 1.5 Auto-caption recognition & injection if enabled
+    if auto_caption:
+        log(f"[BƯỚC 1.5/4] Đang gửi âm thanh lên CapCut Cloud AI nhận dạng phụ đề ({caption_language})...")
+        if progress_cb:
+            progress_cb(35, f"Đang nhận diện giọng nói ({caption_language})...")
+        try:
+            from core.auto_caption import CapCutAutoCaption
+            captioner = CapCutAutoCaption()
+            utterances = captioner.transcribe(vp, language=caption_language, log_cb=log)
+            if utterances:
+                draft_content = captioner.inject_subtitles_to_draft(draft_content, utterances)
+                log(f"[+] Đã gắn {len(utterances)} đoạn phụ đề vào timeline thành công.")
+            else:
+                log("[i] Không phát hiện giọng nói trong video (bỏ qua gắn phụ đề).")
+        except Exception as c_err:
+            log(f"[!] Cảnh báo: Nhận diện phụ đề gặp sự cố ({c_err}), tiếp tục render video...")
 
     # 2. Save Cloud Draft
     log("[BƯỚC 2/4] Đang lưu trữ Cloud Draft lên CapCut Workspace...")

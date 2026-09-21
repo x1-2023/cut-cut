@@ -426,6 +426,44 @@ class CapCutStudioApp(ctk.CTk):
         reset_c_btn = ctk.CTkButton(self.f_color_content, text="Reset Color to Default", width=150, height=28, fg_color="#334155", hover_color="#475569", command=self._reset_color)
         reset_c_btn.pack(anchor="w", padx=120, pady=(4, 8))
 
+        # 6.6 Section: Auto Captions (Phụ đề giọng nói)
+        self.f_caption_content = self._create_accordion_section(recipe_card, "Auto Captions (Phụ đề giọng nói ASR)", default_open=True)
+        cap_f = ctk.CTkFrame(self.f_caption_content, fg_color="transparent")
+        cap_f.pack(fill="x", pady=6)
+
+        self.chk_auto_caption = ctk.CTkCheckBox(
+            cap_f,
+            text="Tự động nhận diện phụ đề (Auto Captions)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8",
+            command=self._update_live_summary,
+        )
+        self.chk_auto_caption.pack(side="left", padx=(0, 15))
+
+        ctk.CTkLabel(cap_f, text="Ngôn ngữ:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(0, 6))
+        self.caption_lang_combo = ctk.CTkComboBox(
+            cap_f,
+            values=[
+                "Tiếng Việt",
+                "Tiếng Anh",
+                "Tự động nhận diện",
+                "Tiếng Trung",
+                "Tiếng Nhật",
+                "Tiếng Hàn",
+                "Tiếng Pháp",
+                "Tiếng Tây Ban Nha",
+                "Tiếng Đức",
+                "Tiếng Nga",
+                "Tiếng Thái",
+                "Tiếng Indonesia",
+            ],
+            width=160,
+            height=28,
+            command=lambda v: self._update_live_summary(),
+        )
+        self.caption_lang_combo.pack(side="left")
+        self.caption_lang_combo.set("Tiếng Việt")
+
         # ======================================================================
         # RIGHT ~35%: Live Job Summary, Output Mode, Action Button
         # ======================================================================
@@ -635,6 +673,10 @@ class CapCutStudioApp(ctk.CTk):
             c_vals = [int(self.color_temp_slider.get()), int(self.color_tone_slider.get()), int(self.color_sat_slider.get()), int(self.color_contrast_slider.get()), int(self.color_shadow_slider.get())]
             color_txt = "Custom" if any(v != 0 for v in c_vals) else "Default"
 
+            cap_on = getattr(self, "chk_auto_caption", None) and self.chk_auto_caption.get()
+            cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get()
+            cap_txt = f"[{cap_lang}]" if cap_on else "None"
+
             out_mode = self.export_mode.get()
             if out_mode == "cloud":
                 chunk_str = " · Auto-chunk" if getattr(self, "auto_chunk_var", None) and self.auto_chunk_var.get() else ""
@@ -651,7 +693,8 @@ class CapCutStudioApp(ctk.CTk):
                 f"• Effect:  {eff_txt}\n"
                 f"• Overlay: {ov_txt}\n"
                 f"• Audio:   {flags_txt} · BGM: {bgm_txt}\n"
-                f"• Color:   {color_txt}\n\n"
+                f"• Color:   {color_txt}\n"
+                f"• Caption: {cap_txt}\n\n"
                 f"OUTPUT\n"
                 f"• {out_txt}"
             )
@@ -975,6 +1018,38 @@ class CapCutStudioApp(ctk.CTk):
         )
         self.batch_rotate_chk.pack(side="left", padx=(0, 14))
 
+        self.batch_caption_var = ctk.BooleanVar(value=False)
+        self.batch_caption_chk = ctk.CTkCheckBox(
+            r3,
+            text="Tạo phụ đề",
+            variable=self.batch_caption_var,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38bdf8",
+        )
+        self.batch_caption_chk.pack(side="left", padx=(0, 6))
+
+        self.batch_caption_lang_combo = ctk.CTkComboBox(
+            r3,
+            values=[
+                "Tiếng Việt",
+                "Tiếng Anh",
+                "Tự động nhận diện",
+                "Tiếng Trung",
+                "Tiếng Nhật",
+                "Tiếng Hàn",
+                "Tiếng Pháp",
+                "Tiếng Tây Ban Nha",
+                "Tiếng Đức",
+                "Tiếng Nga",
+                "Tiếng Thái",
+                "Tiếng Indonesia",
+            ],
+            width=135,
+            height=28,
+        )
+        self.batch_caption_lang_combo.pack(side="left", padx=(0, 10))
+        self.batch_caption_lang_combo.set("Tiếng Việt")
+
         # Main Action Buttons
         self.btn_batch_start = ctk.CTkButton(
             r3,
@@ -1264,6 +1339,9 @@ class CapCutStudioApp(ctk.CTk):
                     elif "Download" in sub_msg or "Tải về" in sub_msg:
                         update_item_ui(v_key, "Tải về", "#0284c7", sub_msg)
 
+                b_cap = getattr(self, "batch_caption_var", None) and bool(self.batch_caption_var.get())
+                b_lang = getattr(self, "batch_caption_lang_combo", None) and self.batch_caption_lang_combo.get() or "Tiếng Việt"
+
                 auth_job = get_auth_for_job()
                 downloaded = render_draft_cloud(
                     vp=str(vp),
@@ -1271,6 +1349,8 @@ class CapCutStudioApp(ctk.CTk):
                     output_mp4=str(out_file),
                     definition=definition,
                     fps=fps,
+                    auto_caption=b_cap,
+                    caption_language=b_lang,
                     log_cb=self._log,
                     progress_cb=sub_prog_cb,
                 )
@@ -1981,6 +2061,9 @@ class CapCutStudioApp(ctk.CTk):
                         draft_content, _, err = make_draft(vp=vp, **draft_params)
                         if err:
                             raise RuntimeError(f"Lỗi tạo draft: {err}")
+                        auto_cap = getattr(self, "chk_auto_caption", None) and bool(self.chk_auto_caption.get())
+                        cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get() or "Tiếng Việt"
+
                         downloaded = render_draft_cloud(
                             vp=vp,
                             draft_content=draft_content,
@@ -1989,6 +2072,8 @@ class CapCutStudioApp(ctk.CTk):
                             bgm_path=bgm_path,
                             definition=definition,
                             fps=fps,
+                            auto_caption=auto_cap,
+                            caption_language=cap_lang,
                             log_cb=self._log,
                             progress_cb=render_sub_cb,
                         )

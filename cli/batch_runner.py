@@ -42,6 +42,8 @@ class BatchProcessor:
         fps: int = 30,
         output_dir: str = "",
         rotate_accounts: bool = False,
+        auto_caption: bool = False,
+        caption_lang: str = "vi-VN",
     ):
         self.workers = max(1, min(workers, 8))
         self.preset_name = preset_name
@@ -50,6 +52,8 @@ class BatchProcessor:
         self.output_dir = Path(output_dir).resolve() if output_dir else DEFAULT_OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.rotate_accounts = rotate_accounts
+        self.auto_caption = auto_caption
+        self.caption_lang = caption_lang
 
         self.presets = load_presets()
         self.selected_preset = self.presets.get(preset_name, {})
@@ -127,6 +131,8 @@ class BatchProcessor:
                 output_mp4=str(out_file),
                 definition=self.definition,
                 fps=self.fps,
+                auto_caption=self.auto_caption,
+                caption_language=self.caption_lang,
                 log_cb=None,
                 progress_cb=None,
             )
@@ -217,6 +223,8 @@ def run_cli_entry():
     parser.add_argument("-d", "--definition", default="1080p", choices=["720p", "1080p", "2k", "4k"], help="Resolution")
     parser.add_argument("--fps", type=int, default=30, choices=[24, 25, 30, 50, 60], help="Frames per second")
     parser.add_argument("--rotate-accounts", action="store_true", help="Rotate across multiple accounts in accounts.json")
+    parser.add_argument("--caption", action="store_true", help="Auto-generate and burn-in AI speech subtitles")
+    parser.add_argument("--caption-lang", default="vi-VN", help="Language for speech recognition (e.g. vi-VN, en-US, auto)")
     parser.add_argument("--list-presets", action="store_true", help="List available presets and exit")
 
     args = parser.parse_args()
@@ -246,6 +254,8 @@ def run_cli_entry():
         fps=args.fps,
         output_dir=args.output_dir,
         rotate_accounts=args.rotate_accounts,
+        auto_caption=args.caption,
+        caption_lang=args.caption_lang,
     )
     processor.run(video_files)
 
