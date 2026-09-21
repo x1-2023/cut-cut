@@ -11,8 +11,16 @@ import sys
 import time
 import json
 import uuid
+import tempfile
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Callable
+
+# Ensure UTF-8 output on Windows consoles
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 from capcut_tts_api.client import CapCutClient
 from capcut_tts_api.models import SubtitleResult, Utterance
@@ -110,6 +118,38 @@ class CapCutAutoCaption:
     def __init__(self):
         self.client = CapCutClient()
 
+    def _extract_audio_track(self, video_path: str, log_cb: Optional[Callable[[str], None]] = None) -> str:
+        """
+        Extracts a lightweight mono 16kHz MP3 track from video for ultra-fast upload and ASR.
+        """
+        temp_dir = Path(tempfile.gettempdir())
+        temp_audio = temp_dir / f"capcut_asr_{uuid.uuid4().hex[:8]}.mp3"
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            video_path,
+            "-vn",
+            "-acodec",
+            "libmp3lame",
+            "-b:a",
+            "64k",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            str(temp_audio),
+        ]
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            if temp_audio.exists() and temp_audio.stat().st_size > 500:
+                return str(temp_audio)
+        except Exception:
+            pass
+
+        return video_path
+
     def transcribe(
         self,
         video_path: str,
@@ -118,23 +158,38 @@ class CapCutAutoCaption:
     ) -> List[Dict[str, Any]]:
         """
         Transcribes speech in video via CapCut Cloud ASR.
-        Returns a list of utterance dicts: [{'text': str, 'start_ms': int, 'end_ms': int}]
+        Returns a list of utterance dicts: [{'text': str, 'start_ms': int, 'end_ms': int, 'words': list}]
         """
         def log(msg: str):
             if log_cb:
                 log_cb(msg)
             else:
-                print(msg)
+                try:
+                    print(msg)
+                except Exception:
+                    pass
 
         lang_code = LANGUAGE_MAP.get(language, language)
-        log(f"[*] Gửi video lên CapCut Cloud AI nhận dạng phụ đề ({lang_code})...")
+        log(f"[*] Trích xuất âm thanh và gửi lên CapCut Cloud AI nhận dạng ({lang_code})...")
 
-        res = self.client.transcribe_file(
-            file_path=video_path,
-            language=lang_code,
-            wait=True,
-            timeout=120.0,
-        )
+        # 1. Fast audio extraction
+        upload_target = self._extract_audio_track(video_path, log_cb=log)
+        is_temp = upload_target != video_path
+
+        try:
+            # 2. Call Cloud ASR
+            res = self.client.transcribe_file(
+                file_path=upload_target,
+                language=lang_code,
+                wait=True,
+                timeout=120.0,
+            )
+        finally:
+            if is_temp and os.path.exists(upload_target):
+                try:
+                    os.unlink(upload_target)
+                except Exception:
+                    pass
 
         sub_res = self.client.extract_subtitles(res)
         utterances_data = []
@@ -146,6 +201,7 @@ class CapCutAutoCaption:
                     "text": t,
                     "start_ms": int(u.start_time),
                     "end_ms": int(u.end_time),
+                    "words": u.words if hasattr(u, "words") else [],
                 })
 
         log(f"[+] Nhận diện thành công: {len(utterances_data)} đoạn phụ đề thoại.")
@@ -224,6 +280,7 @@ class CapCutAutoCaption:
             }
 
             text_mat = {
+                "recognize_task_id": "",
                 "id": text_id,
                 "type": "subtitle",
                 "name": "",
@@ -247,19 +304,43 @@ class CapCutAutoCaption:
                 "border_width": s_width,
                 "style_name": "",
                 "text_color": t_color,
-                "text_preset_resource_id": "",
-                "check_flag": 7,
-                "font_id": "",
-                "font_path": "",
+                "text_alpha": 1.0,
                 "font_name": "",
+                "font_title": "none",
                 "font_size": f_size,
+                "font_path": "",
+                "font_id": "",
+                "font_resource_id": "",
+                "initial_scale": 1.0,
+                "font_url": "",
+                "typesetting": 0,
                 "alignment": 1,
-                "sub_type": 0,
+                "line_feed": 1,
+                "use_effect_default_color": True,
+                "is_rich_text": False,
+                "sub_type": 2,
+                "check_flag": 63,
+                "text_size": 30,
+                "add_type": 1,
+                "recognize_type": 0,
+                "text_preset_resource_id": "",
+                "group_id": "",
+                "text": text_str,
             }
             texts_list.append(text_mat)
 
             segment = {
                 "id": str(uuid.uuid4()),
+                "desc": "",
+                "state": 0,
+                "speed": 1.0,
+                "is_loop": False,
+                "is_tone_modify": False,
+                "reverse": False,
+                "intensifies_audio": False,
+                "cartoon": False,
+                "volume": 1.0,
+                "last_nonzero_volume": 1.0,
                 "material_id": text_id,
                 "render_index": 14000 + idx,
                 "enable_lut": True,
@@ -290,18 +371,22 @@ class CapCutAutoCaption:
                     "transform": {"x": 0.0, "y": y_position},
                     "flip": {"vertical": False, "horizontal": False},
                 },
+                "uniform_scale": {"on": True, "value": 1.0},
+                "caption_info": None,
+                "extra_material_refs": [],
             }
             segments.append(segment)
 
-        # Create or append to subtitle track
+        # Track with flag=1 (CapCut Subtitle track spec)
         existing_text_track = next((t for t in tracks if t.get("type") == "text"), None)
         if existing_text_track:
+            existing_text_track["flag"] = 1
             existing_text_track.setdefault("segments", []).extend(segments)
         else:
             tracks.append({
                 "id": str(uuid.uuid4()),
                 "type": "text",
-                "flag": 0,
+                "flag": 1,
                 "segments": segments,
             })
 
