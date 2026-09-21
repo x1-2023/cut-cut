@@ -103,5 +103,41 @@
       "resolution": "1080p",
       "fps": 60
     }
+  },
+  "Full": {
+    "name": "Full",
+    "video": {
+      "speed": 1.1,
+      "scale": 110.0,
+      "volume_db": 20.0
+    },
+    "effect": {
+      "name": "Ngọn lửa",
+      "speed": 13,
+      "air": 35
+    },
+    "audio": {
+      "voice_sharpen": true,
+      "vocal_sep": false,
+      "bgm_path": "",
+      "bgm_db": 0.0
+    },
+    "overlay": {
+      "path": "",
+      "chroma_enabled": true,
+      "chroma_intensity": 70
+    },
+    "color": {
+      "temperature": 0,
+      "tone": 0,
+      "saturation": 0,
+      "contrast": 0,
+      "shadow": 0
+    },
+    "output": {
+      "mode": "cloud",
+      "resolution": "1080p",
+      "fps": 30
+    }
   }
 }

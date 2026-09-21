@@ -1044,6 +1044,9 @@ def render_video_auto_chunked_cloud(
     max_chunk_workers: int = 2,
     definition: str = "1080p",
     fps: int = 30,
+    auto_caption: bool = False,
+    caption_language: str = "vi-VN",
+    caption_style: str = "TikTok Viral (Vàng viền đen)",
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, str], None]] = None,
 ) -> str:
@@ -1086,6 +1089,9 @@ def render_video_auto_chunked_cloud(
             bgm_path=draft_params.get("bgm_path", ""),
             definition=definition,
             fps=fps,
+            auto_caption=auto_caption,
+            caption_language=caption_language,
+            caption_style=caption_style,
             log_cb=log_cb,
             progress_cb=progress_cb,
         )

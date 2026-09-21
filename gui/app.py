@@ -1678,10 +1678,23 @@ class CapCutStudioApp(ctk.CTk):
         ctk.CTkLabel(th, text="Date Modified", width=160, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         ctk.CTkLabel(th, text="Status", anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", fill="x", expand=True)
 
-        output_dir = Path(__file__).resolve().parent
-        mp4_files = sorted(output_dir.glob("*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
+        dirs_to_scan = [
+            Path(DEFAULT_OUTPUT_DIR).resolve(),
+            Path(__file__).resolve().parent,
+        ]
+        seen_paths = set()
+        mp4_files = []
+        for d in dirs_to_scan:
+            if d.exists():
+                for f in d.glob("*.mp4"):
+                    abs_p = str(f.resolve())
+                    if abs_p not in seen_paths:
+                        seen_paths.add(abs_p)
+                        mp4_files.append(f)
 
-        for f in mp4_files[:40]:
+        mp4_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+
+        for f in mp4_files[:60]:
             if q and q not in f.name.lower():
                 continue
 
@@ -1700,9 +1713,10 @@ class CapCutStudioApp(ctk.CTk):
             play_btn.pack(side="right", padx=10)
 
     def _open_output_folder(self):
-        folder = str(Path(__file__).resolve().parent)
+        folder = Path(DEFAULT_OUTPUT_DIR).resolve()
+        folder.mkdir(parents=True, exist_ok=True)
         if sys.platform == "win32":
-            os.startfile(folder)
+            os.startfile(str(folder))
 
     # --------------------------------------------------------------------------
     # PAGE 5: ACCOUNT MANAGER (Compact Cards + Pool Table + Modal Add)
@@ -2083,6 +2097,10 @@ class CapCutStudioApp(ctk.CTk):
                         step_pct = int(sub_pct / len(videos))
                         self._update_progress(base_pct + step_pct, f"[{counter[0]+1}/{len(videos)}] {sub_msg}")
 
+                    auto_cap = getattr(self, "chk_auto_caption", None) and bool(self.chk_auto_caption.get())
+                    cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get() or "Tiếng Việt"
+                    cap_style = getattr(self, "caption_style_combo", None) and self.caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
+
                     use_auto_chunk = getattr(self, "auto_chunk_var", None) and self.auto_chunk_var.get()
 
                     if use_auto_chunk:
@@ -2094,6 +2112,9 @@ class CapCutStudioApp(ctk.CTk):
                             max_chunk_workers=min(2, n_threads),
                             definition=definition,
                             fps=fps,
+                            auto_caption=auto_cap,
+                            caption_language=cap_lang,
+                            caption_style=cap_style,
                             log_cb=self._log,
                             progress_cb=render_sub_cb,
                         )
@@ -2101,9 +2122,6 @@ class CapCutStudioApp(ctk.CTk):
                         draft_content, _, err = make_draft(vp=vp, **draft_params)
                         if err:
                             raise RuntimeError(f"Lỗi tạo draft: {err}")
-                        auto_cap = getattr(self, "chk_auto_caption", None) and bool(self.chk_auto_caption.get())
-                        cap_lang = getattr(self, "caption_lang_combo", None) and self.caption_lang_combo.get() or "Tiếng Việt"
-                        cap_style = getattr(self, "caption_style_combo", None) and self.caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
 
                         downloaded = render_draft_cloud(
                             vp=vp,
