@@ -1,4 +1,4 @@
-﻿# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
@@ -15,8 +15,11 @@ config/accounts.json
 *.flv
 *.wav
 *.mp3
+output/
 rendered/
 temp_audio/
+temp_vocals/
+temp_*/
 .chunks_*/
 *.zip
 *.har

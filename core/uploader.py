@@ -107,11 +107,14 @@ class CapCutUploader:
 
     def apply_upload_inner(self, creds: Dict[str, Any], file_size: int, file_type: str = "video") -> Dict[str, Any]:
         """Step 2: Request ByteDance VOD upload node and TOS endpoint."""
+        # ByteDance VOD ApplyUploadInner only supports 'video' and 'image' (not 'audio').
+        # Audio files (WAV/MP3) use 'video' container type on VOD storage nodes.
+        vod_file_type = "image" if file_type == "image" else "video"
         query = urllib.parse.urlencode({
             "Action": "ApplyUploadInner",
             "Version": "2020-11-19",
             "SpaceName": VOD_SPACE,
-            "FileType": file_type,
+            "FileType": vod_file_type,
             "IsInner": "1",
             "FileSize": str(file_size),
             "device_platform": "web",

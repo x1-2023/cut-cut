@@ -71,6 +71,7 @@ def make_draft(
     scale_pct: float = 120.0,
     voice_sharpen: bool = False,
     vocal_sep: bool = False,
+    vocal_path: str = "",
     color_temperature: int = 0,
     color_tone: int = 0,
     color_saturation: int = 0,
@@ -110,6 +111,8 @@ def make_draft(
     mat_id = str(uuid.uuid4()).upper()
     track_id = str(uuid.uuid4()).upper()
     volume = db_to_volume(volume_db)
+    has_vocal_audio = bool(vocal_path and os.path.exists(vocal_path))
+    video_seg_volume = 0.0 if has_vocal_audio else volume
     scale = scale_pct / 100.0
 
     segments = []
@@ -142,7 +145,7 @@ def make_draft(
             "reverse": False,
             "intensifies_audio": False,
             "cartoon": False,
-            "volume": volume,
+            "volume": video_seg_volume,
             "last_nonzero_volume": volume,
             "clip": {
                 "scale": {"x": scale, "y": scale},
@@ -501,6 +504,102 @@ def make_draft(
             "live_photo_cover_path": "",
         })
 
+    # Vocal Isolated Audio (from AI Vocal Separation)
+    vocal_mats = []
+    if vocal_path and os.path.exists(vocal_path):
+        vocal_mat_id = str(uuid.uuid4()).upper()
+        vocal_track_id = str(uuid.uuid4()).upper()
+        vocal_name = os.path.basename(vocal_path)
+        vocal_volume = volume  # Uses user's configured volume
+
+        vocal_dur, _, _ = get_duration(vocal_path)
+        vocal_dur = vocal_dur or real_duration
+        vocal_dur_us = int(vocal_dur * 1e6)
+
+        vocal_spid = str(uuid.uuid4()).upper()
+        vocal_phid = str(uuid.uuid4()).upper()
+        vocal_scid = str(uuid.uuid4()).upper()
+
+        speeds.append({"id": vocal_spid, "type": "speed", "mode": 0, "speed": 1.0, "curve_speed": None})
+        phs.append({"id": vocal_phid, "type": "placeholder_info", "meta_type": "none", "res_path": "", "res_text": "", "error_path": "", "error_text": ""})
+        scs.append({"id": vocal_scid, "type": "none", "audio_channel_mapping": 0, "is_config_open": False})
+
+        vocal_segs = []
+        timeline_pos = 0
+        while timeline_pos < duration_us:
+            seg_dur = min(vocal_dur_us, duration_us - timeline_pos)
+            vocal_segs.append({
+                "id": str(uuid.uuid4()).upper(),
+                "source_timerange": {"start": 0, "duration": seg_dur},
+                "target_timerange": {"start": timeline_pos, "duration": seg_dur},
+                "render_timerange": {"start": 0, "duration": 0},
+                "desc": "",
+                "state": 0,
+                "speed": 1.0,
+                "is_loop": False,
+                "is_tone_modify": False,
+                "reverse": False,
+                "intensifies_audio": False,
+                "cartoon": False,
+                "volume": vocal_volume,
+                "last_nonzero_volume": vocal_volume,
+                "clip": None,
+                "uniform_scale": None,
+                "material_id": vocal_mat_id,
+                "extra_material_refs": [vocal_spid, vocal_phid, vocal_scid],
+                "render_index": 0,
+                "keyframe_refs": [],
+                "enable_lut": False,
+                "enable_adjust": False,
+                "enable_hsl": False,
+                "visible": True,
+                "group_id": "",
+                "enable_color_curves": True,
+                "enable_hsl_curves": True,
+                "track_render_index": 0,
+                "hdr_settings": None,
+                "enable_color_wheels": True,
+                "track_attribute": 0,
+                "is_placeholder": False,
+                "template_id": "",
+                "template_scene": "default",
+                "common_keyframes": [],
+                "caption_info": None,
+                "source": "segmentsourcenormal",
+                "enable_mask_stroke": False,
+                "enable_mask_shadow": False,
+                "enable_color_adjust_pro": False,
+            })
+            timeline_pos += seg_dur
+
+        tracks.append({"id": vocal_track_id, "type": "audio", "segments": vocal_segs, "flag": 0, "attribute": 0, "name": "Vocal Track", "is_default_name": False})
+        vocal_mats.append({
+            "id": vocal_mat_id,
+            "unique_id": "",
+            "type": "extract_music",
+            "name": vocal_name,
+            "duration": vocal_dur_us,
+            "path": vocal_path.replace("\\", "/"),
+            "category_name": "local",
+            "wave_points": [],
+            "music_id": "",
+            "app_id": 0,
+            "text_id": "",
+            "tone_type": "",
+            "source_platform": 0,
+            "video_id": "",
+            "effect_id": "",
+            "resource_id": "",
+            "third_resource_id": "",
+            "category_id": "",
+            "intensifies_path": "",
+            "formula_id": "",
+            "check_flag": 1,
+            "team_id": "",
+            "local_material_id": "",
+            "tone_speaker": "",
+        })
+
     # BGM Audio
     bgm_mats = []
     if bgm_path and os.path.exists(bgm_path):
@@ -718,7 +817,7 @@ def make_draft(
             "video_effects": video_effects,
             "flowers": [],
             "tail_leaders": [],
-            "audios": bgm_mats,
+            "audios": vocal_mats + bgm_mats,
             "images": [],
             "texts": [],
             "effects": color_effects_list,
@@ -871,27 +970,34 @@ def render_draft_cloud(
     output_mp4: str,
     overlay_path: str = "",
     bgm_path: str = "",
+    vocal_path: str = "",
     definition: str = "1080p",
     fps: int = 30,
     auto_caption: bool = False,
     caption_language: str = "vi-VN",
     caption_style: str = "TikTok Viral (Vàng viền đen)",
+    compress_crf: bool = False,
+    crf: int = 24,
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, str], None]] = None,
 ) -> str:
     """
     Renders draft_content on CapCut Cloud without opening CapCut PC.
-    1. Uploads primary video, overlay video, and BGM to CapCut TOS VOD.
-    2. Maps local file paths in draft_content to cloud virtual paths (/<md5>.mp4).
+    1. Uploads primary video, overlay video, isolated vocal audio, and BGM to CapCut TOS VOD.
+    2. Maps local file paths in draft_content to cloud virtual paths (/<md5>.mp4, /<md5>.wav).
     3. If auto_caption enabled, recognizes speech via CapCut Cloud ASR and injects subtitles with style.
     4. Saves Cloud Draft via CapCut Web API.
     5. Triggers Cloud Render task and polls until MP4 download completes.
     """
     def log(msg: str):
-        print(msg)
+        now_str = time.strftime("[%H:%M:%S]")
+        formatted = msg if (msg.startswith("[") and len(msg) >= 10 and msg[3] == ":" and msg[6] == ":") else f"{now_str} {msg}"
         if log_cb:
-            log_cb(msg)
+            log_cb(formatted)
+        else:
+            print(formatted, flush=True)
 
+    t_render_start = time.time()
     from core.auth import CapCutAuth
     from core.uploader import CapCutUploader
     from core.cloud_draft import CapCutCloudDraft
@@ -938,6 +1044,20 @@ def render_draft_cloud(
                 vmat["path"] = v_path_ov
                 vmat["version"] = 400000
                 vmat["new_version"] = "127.0.0"
+
+    # Vocal isolated audio upload if present
+    if vocal_path and os.path.isfile(vocal_path):
+        log("[BƯỚC 1/4] Đang tải audio giọng nói đã tách (Vocal) lên Cloud...")
+        if progress_cb:
+            progress_cb(25, "Đang tải audio vocal lên Cloud...")
+        vocal_asset = uploader.upload(vocal_path, file_type="audio")
+        uploaded_assets.append(vocal_asset)
+        v_path_vocal = f"/{vocal_asset['md5']}.wav"
+        local_path_to_md5[v_path_vocal] = vocal_asset["md5"]
+
+        for amat in draft_content.get("materials", {}).get("audios", []):
+            if amat.get("path") == vocal_path.replace("\\", "/"):
+                amat["path"] = v_path_vocal
 
     # BGM upload if present
     if bgm_path and os.path.isfile(bgm_path):
@@ -1030,9 +1150,20 @@ def render_draft_cloud(
         progress_cb=render_progress_cb,
     )
 
+    if compress_crf and os.path.exists(downloaded):
+        from core.chunk_engine import compress_video_crf
+        if progress_cb:
+            progress_cb(96, f"Đang nén tối ưu dung lượng (CRF {crf})...")
+        downloaded = compress_video_crf(downloaded, crf=crf, log_cb=log, progress_cb=progress_cb)
+
+    elapsed_render = time.time() - t_render_start
+    m, s = divmod(int(elapsed_render), 60)
+    h, m = divmod(m, 60)
+    t_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+
     if progress_cb:
-        progress_cb(100, "Hoàn tất! File video đã được tải về máy.")
-    log(f"[+] HOÀN THÀNH XUẤT VIDEO: {downloaded}")
+        progress_cb(100, f"Hoàn tất trong {t_str}! File video đã được tải về máy.")
+    log(f"[+] HOÀN THÀNH XUẤT VIDEO trong {t_str} ({elapsed_render:.1f}s): {downloaded}")
     return downloaded
 
 
@@ -1047,6 +1178,8 @@ def render_video_auto_chunked_cloud(
     auto_caption: bool = False,
     caption_language: str = "vi-VN",
     caption_style: str = "TikTok Viral (Vàng viền đen)",
+    compress_crf: bool = False,
+    crf: int = 24,
     log_cb: Optional[Callable[[str], None]] = None,
     progress_cb: Optional[Callable[[int, str], None]] = None,
 ) -> str:
@@ -1060,10 +1193,14 @@ def render_video_auto_chunked_cloud(
       4. Cleans up temporary chunk files.
     """
     def log(msg: str):
-        print(msg)
+        now_str = time.strftime("[%H:%M:%S]")
+        formatted = msg if (msg.startswith("[") and len(msg) >= 10 and msg[3] == ":" and msg[6] == ":") else f"{now_str} {msg}"
         if log_cb:
-            log_cb(msg)
+            log_cb(formatted)
+        else:
+            print(formatted, flush=True)
 
+    t_chunked_start = time.time()
     from core.chunk_engine import get_media_duration, split_video, concat_videos, cleanup_chunks
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import threading
@@ -1075,15 +1212,36 @@ def render_video_auto_chunked_cloud(
     dur = get_media_duration(str(in_file))
     log(f"[*] Phân tích video: {in_file.name} | Thời lượng: {dur:.1f}s ({dur/60:.1f} phút)")
 
+    # 1. AI Vocal Separation if enabled (mute original audio, keep vocals)
+    vocal_sep = draft_params.get("vocal_sep", False)
+    vocal_full_path = None
+    if vocal_sep:
+        log("[BƯỚC 1/4] Kích hoạt CapCut AI Vocal Separation: Đang tách giọng nói, loại bỏ nhạc nền cũ...")
+        if progress_cb:
+            progress_cb(8, "Đang bóc tách giọng nói AI (Vocal Separation)...")
+        try:
+            from core.vocal_separator import CapCutVocalSeparator
+            separator = CapCutVocalSeparator()
+            vocal_full_path = separator.separate_video(
+                str(in_file),
+                log_cb=log,
+                progress_cb=lambda p, m: progress_cb(min(25, int(p * 0.25)), m) if progress_cb else None,
+            )
+            log(f"[+] Tách vocal thành công: {Path(vocal_full_path).name}")
+            draft_params["vocal_path"] = vocal_full_path
+        except Exception as v_err:
+            log(f"[!] Cảnh báo: Tách vocal AI gặp sự cố ({v_err}), tiếp tục render với âm thanh gốc...")
+
     full_utterances = []
     if auto_caption:
         log(f"[BƯỚC 1.5/4] Đang gửi âm thanh lên CapCut Cloud AI nhận dạng phụ đề ({caption_language})...")
         if progress_cb:
-            progress_cb(15, f"Đang nhận diện giọng nói ({caption_language})...")
+            progress_cb(26, f"Đang nhận diện giọng nói ({caption_language})...")
         try:
             from core.auto_caption import CapCutAutoCaption
             captioner = CapCutAutoCaption()
-            full_utterances = captioner.transcribe(str(in_file), language=caption_language, log_cb=log)
+            transcribe_target = vocal_full_path if (vocal_full_path and os.path.exists(vocal_full_path)) else str(in_file)
+            full_utterances = captioner.transcribe(transcribe_target, language=caption_language, log_cb=log)
             if full_utterances:
                 log(f"[+] Nhận diện thành công: {len(full_utterances)} câu phụ đề thoại.")
             else:
@@ -1110,11 +1268,14 @@ def render_video_auto_chunked_cloud(
             output_mp4=str(out_file),
             overlay_path=draft_params.get("overlay_path", ""),
             bgm_path=draft_params.get("bgm_path", ""),
+            vocal_path=draft_params.get("vocal_path", ""),
             definition=definition,
             fps=fps,
             auto_caption=False,
             caption_language=caption_language,
             caption_style=caption_style,
+            compress_crf=compress_crf,
+            crf=crf,
             log_cb=log_cb,
             progress_cb=progress_cb,
         )
@@ -1144,6 +1305,16 @@ def render_video_auto_chunked_cloud(
         # Create draft specifically for this chunk (seg=0 to keep 1 clip)
         c_params = dict(draft_params)
         c_params["seg"] = 0
+
+        # Slice vocal audio for this chunk if vocal separation was active
+        if vocal_full_path and os.path.exists(vocal_full_path):
+            from core.vocal_separator import slice_audio
+            c_start_s = float(chunk_info.get("start", c_idx * chunk_duration))
+            c_dur_s = float(chunk_info.get("duration", chunk_duration))
+            c_vocal_wav = str(chunks_temp_dir / f"vocal_part_{c_idx:03d}.wav")
+            slice_audio(vocal_full_path, c_start_s, c_dur_s, c_vocal_wav)
+            c_params["vocal_path"] = c_vocal_wav
+
         c_draft, c_err, _ = make_draft(vp=c_path, **c_params)
         if c_err:
             raise RuntimeError(f"Lỗi tạo draft cho chunk {c_idx}: {c_err}")
@@ -1184,6 +1355,7 @@ def render_video_auto_chunked_cloud(
             output_mp4=c_out_mp4,
             overlay_path=draft_params.get("overlay_path", ""),
             bgm_path=draft_params.get("bgm_path", ""),
+            vocal_path=c_params.get("vocal_path", ""),
             definition=definition,
             fps=fps,
             log_cb=lambda m: log(f"[{c_idx+1}/{total_chunks}] {m}"),
@@ -1228,8 +1400,20 @@ def render_video_auto_chunked_cloud(
     log(f"[*] Dọn dẹp dữ liệu tạm thời: {chunks_temp_dir.name}...")
     cleanup_chunks(str(chunks_temp_dir))
 
+    # Optional fast CRF compression if user requested storage optimization
+    if compress_crf and os.path.exists(final_mp4):
+        from core.chunk_engine import compress_video_crf
+        if progress_cb:
+            progress_cb(96, f"Đang nén tối ưu dung lượng (CRF {crf})...")
+        final_mp4 = compress_video_crf(final_mp4, crf=crf, log_cb=log, progress_cb=progress_cb)
+
+    elapsed_total = time.time() - t_chunked_start
+    m, s = divmod(int(elapsed_total), 60)
+    h, m = divmod(m, 60)
+    t_str = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+
     if progress_cb:
-        progress_cb(100, "Hoàn tất xuất video hoàn chỉnh!")
-    log(f"[+] HOÀN THÀNH TOÀN BỘ VIDEO ({dur/60:.1f} phút): {final_mp4}")
+        progress_cb(100, f"Hoàn tất xuất video hoàn chỉnh trong {t_str}!")
+    log(f"[+] HOÀN THÀNH TOÀN BỘ VIDEO ({dur/60:.1f} phút) trong {t_str} ({elapsed_total:.1f}s): {final_mp4}")
     return final_mp4
 

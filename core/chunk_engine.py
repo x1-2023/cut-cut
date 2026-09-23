@@ -226,3 +226,96 @@ def cleanup_chunks(chunks_dir: str):
             shutil.rmtree(p, ignore_errors=True)
     except Exception as e:
         print(f"[!] Note: Could not fully delete chunk dir {chunks_dir}: {e}")
+
+
+def compress_video_crf(
+    input_path: str,
+    output_path: Optional[str] = None,
+    crf: int = 24,
+    preset: str = "veryfast",
+    log_cb: Optional[Callable[[str], None]] = None,
+    progress_cb: Optional[Callable[[int, str], None]] = None,
+) -> str:
+    """
+    Compress video using H.264 CRF (Constant Rate Factor) to drastically reduce file size
+    while preserving visual fidelity and keeping audio stream intact.
+    - crf=24: Optimal balance between quality and high compression (~60-80% size reduction).
+    - preset='veryfast': Fast encoding on CPU.
+    """
+    import time
+
+    def log(msg: str):
+        if log_cb:
+            log_cb(msg)
+        else:
+            try:
+                print(msg)
+            except UnicodeEncodeError:
+                print(msg.encode("ascii", errors="replace").decode("ascii"))
+
+    in_file = Path(input_path).resolve()
+    if not in_file.is_file():
+        raise FileNotFoundError(f"File to compress not found: {in_file}")
+
+    if output_path:
+        out_file = Path(output_path).resolve()
+    else:
+        out_file = in_file  # In-place compression by default
+
+    orig_size_mb = in_file.stat().st_size / (1024 * 1024)
+    log(f"[*] Bắt đầu nén video (CRF {crf}, preset {preset})...")
+    log(f"[*] Dung lượng gốc: {orig_size_mb:.2f} MB")
+    if progress_cb:
+        progress_cb(96, f"Đang nén video tối ưu dung lượng (CRF {crf})...")
+
+    # Temp file in case input == output
+    is_replace = (out_file == in_file)
+    tmp_out = in_file.parent / f".compress_tmp_{in_file.stem}_{int(time.time())}.mp4"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(in_file),
+        "-c:v", "libx264",
+        "-crf", str(crf),
+        "-preset", preset,
+        "-c:a", "copy",
+        str(tmp_out)
+    ]
+
+    res = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+    )
+
+    if res.returncode != 0 or not tmp_out.is_file() or tmp_out.stat().st_size == 0:
+        log(f"[!] Lỗi khi nén video: {res.stderr}")
+        if tmp_out.exists():
+            tmp_out.unlink()
+        return str(in_file)
+
+    comp_size_mb = tmp_out.stat().st_size / (1024 * 1024)
+    saved_pct = (1.0 - (comp_size_mb / orig_size_mb)) * 100.0 if orig_size_mb > 0 else 0.0
+
+    if is_replace and comp_size_mb >= orig_size_mb:
+        log(f"[i] Dung lượng sau nén ({comp_size_mb:.2f} MB) không tối ưu hơn gốc ({orig_size_mb:.2f} MB). Giữ nguyên file ban đầu.")
+        tmp_out.unlink()
+        return str(in_file)
+
+    if is_replace:
+        try:
+            in_file.unlink()
+            tmp_out.rename(out_file)
+        except Exception as e:
+            # Fallback if Windows file lock delay
+            time.sleep(0.5)
+            if in_file.exists():
+                in_file.unlink()
+            tmp_out.rename(out_file)
+    else:
+        tmp_out.rename(out_file)
+
+    log(f"[+] Nén thành công! Dung lượng mới: {comp_size_mb:.2f} MB (Tiết kiệm {saved_pct:.1f}%)")
+    return str(out_file)

@@ -116,6 +116,12 @@ class CapCutStudioApp(ctk.CTk):
         self.batch_items_ui = {}
         self.batch_stats = {"total": 0, "running": 0, "done": 0, "failed": 0}
 
+        # Stopwatch Timers
+        self._workbench_start_time = 0.0
+        self._workbench_timer_id = None
+        self._batch_start_time = 0.0
+        self._batch_timer_id = None
+
         # Build UI Architecture
         self._build_header()
         self._build_body_layout()
@@ -541,6 +547,10 @@ class CapCutStudioApp(ctk.CTk):
         self.auto_chunk_chk = ctk.CTkCheckBox(self.f_cloud_opts, text="Auto-chunk (>60s)", variable=self.auto_chunk_var, font=ctk.CTkFont(size=11), command=lambda: self._update_live_summary())
         self.auto_chunk_chk.pack(side="left", padx=(10, 0))
 
+        self.compress_crf_var = ctk.BooleanVar(value=True)
+        self.compress_crf_chk = ctk.CTkCheckBox(self.f_cloud_opts, text="Nén CRF 24", variable=self.compress_crf_var, font=ctk.CTkFont(size=11), command=lambda: self._update_live_summary())
+        self.compress_crf_chk.pack(side="left", padx=(10, 0))
+
         # PRIMARY ACTION BUTTON
         self.primary_action_btn = ctk.CTkButton(
             right_col,
@@ -566,6 +576,9 @@ class CapCutStudioApp(ctk.CTk):
 
         self.queue_pct_lbl = ctk.CTkLabel(prog_hdr, text="0%", font=ctk.CTkFont(size=12, weight="bold"), text_color=CLR_TXT_MUTED)
         self.queue_pct_lbl.pack(side="right")
+
+        self.queue_timer_lbl = ctk.CTkLabel(prog_hdr, text="⏱ 00:00", font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
+        self.queue_timer_lbl.pack(side="right", padx=(0, 14))
 
         self.queue_bar = ctk.CTkProgressBar(bottom_box, height=8, corner_radius=4)
         self.queue_bar.pack(fill="x", padx=16, pady=(2, 6))
@@ -702,7 +715,8 @@ class CapCutStudioApp(ctk.CTk):
             out_mode = self.export_mode.get()
             if out_mode == "cloud":
                 chunk_str = " · Auto-chunk" if getattr(self, "auto_chunk_var", None) and self.auto_chunk_var.get() else ""
-                out_txt = f"Draft + Cloud Render ({self.res_combo.get()} · {self.fps_combo.get()} FPS{chunk_str})"
+                crf_str = " · CRF 24" if getattr(self, "compress_crf_var", None) and self.compress_crf_var.get() else ""
+                out_txt = f"Draft + Cloud Render ({self.res_combo.get()} · {self.fps_combo.get()} FPS{chunk_str}{crf_str})"
             else:
                 out_txt = "CapCut PC Draft Only"
 
@@ -1088,6 +1102,16 @@ class CapCutStudioApp(ctk.CTk):
         self.batch_caption_style_combo.pack(side="left", padx=(0, 6))
         self.batch_caption_style_combo.set("TikTok Viral (Vàng viền đen)")
 
+        self.batch_crf_var = ctk.BooleanVar(value=True)
+        self.batch_crf_chk = ctk.CTkCheckBox(
+            r3,
+            text="Nén CRF 24",
+            variable=self.batch_crf_var,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#10b981",
+        )
+        self.batch_crf_chk.pack(side="left", padx=(0, 10))
+
         # Main Action Buttons
         self.btn_batch_start = ctk.CTkButton(
             r3,
@@ -1126,6 +1150,9 @@ class CapCutStudioApp(ctk.CTk):
 
         self.batch_pct_lbl = ctk.CTkLabel(p_hdr, text="0%", font=ctk.CTkFont(size=12, weight="bold"), text_color=CLR_TXT_MUTED)
         self.batch_pct_lbl.pack(side="right")
+
+        self.batch_timer_lbl = ctk.CTkLabel(p_hdr, text="⏱ 00:00", font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8")
+        self.batch_timer_lbl.pack(side="right", padx=(0, 14))
 
         self.batch_prog_bar = ctk.CTkProgressBar(prog_f, height=8, corner_radius=4)
         self.batch_prog_bar.pack(fill="x", padx=16, pady=(2, 10))
@@ -1250,6 +1277,7 @@ class CapCutStudioApp(ctk.CTk):
         self.btn_batch_stop.configure(state="normal")
         self.batch_stats = {"total": len(self.batch_videos), "running": 0, "done": 0, "failed": 0}
         self._update_batch_stat_cards()
+        self._start_batch_timer()
 
         threading.Thread(target=self._run_batch_worker, args=(out_dir,), daemon=True).start()
 
@@ -1362,6 +1390,17 @@ class CapCutStudioApp(ctk.CTk):
                     draft_params["color_contrast"] = c_cfg.get("contrast", 0)
                     draft_params["color_shadow"] = c_cfg.get("shadow", 0)
 
+                # 1.5 Vocal Separation if enabled
+                if draft_params.get("vocal_sep"):
+                    update_item_ui(v_key, "Tách Vocal", "#8b5cf6", "Đang bóc tách giọng nói AI...")
+                    try:
+                        from core.vocal_separator import CapCutVocalSeparator
+                        separator = CapCutVocalSeparator()
+                        v_wav = separator.separate_video(str(vp), log_cb=self._log)
+                        draft_params["vocal_path"] = v_wav
+                    except Exception as v_err:
+                        self._log(f"[!] Cảnh báo: Lỗi tách vocal ({v_err}), render âm thanh gốc...")
+
                 # 2. Make draft
                 update_item_ui(v_key, "Tạo Draft", "#0284c7", "Đang dựng cấu trúc timeline...")
                 draft_content, _, err = make_draft(vp=str(vp), **draft_params)
@@ -1380,17 +1419,21 @@ class CapCutStudioApp(ctk.CTk):
                 b_cap = getattr(self, "batch_caption_var", None) and bool(self.batch_caption_var.get())
                 b_lang = getattr(self, "batch_caption_lang_combo", None) and self.batch_caption_lang_combo.get() or "Tiếng Việt"
                 b_style = getattr(self, "batch_caption_style_combo", None) and self.batch_caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
+                b_crf = getattr(self, "batch_crf_var", None) and bool(self.batch_crf_var.get())
 
                 auth_job = get_auth_for_job()
                 downloaded = render_draft_cloud(
                     vp=str(vp),
                     draft_content=draft_content,
                     output_mp4=str(out_file),
+                    vocal_path=draft_params.get("vocal_path", ""),
                     definition=definition,
                     fps=fps,
                     auto_caption=b_cap,
                     caption_language=b_lang,
                     caption_style=b_style,
+                    compress_crf=b_crf,
+                    crf=24,
                     log_cb=self._log,
                     progress_cb=sub_prog_cb,
                 )
@@ -1431,12 +1474,16 @@ class CapCutStudioApp(ctk.CTk):
 
         self.batch_running = False
         def finish_ui():
+            self._stop_batch_timer()
             self.btn_batch_start.configure(state="normal", text="▶ BẮT ĐẦU CHẠY HÀNG LOẠT")
             self.btn_batch_stop.configure(state="disabled", text="⏹ DỪNG LẠI")
             self._refresh_exports_table()
             done = self.batch_stats["done"]
             failed = self.batch_stats["failed"]
-            msg = f"Đã xử lý xong hàng loạt!\n- Thành công: {done}/{total}\n- Lỗi: {failed}/{total}"
+            total_elapsed = time.time() - self._batch_start_time if self._batch_start_time > 0 else 0
+            time_str = self._format_elapsed(total_elapsed)
+            self._log(f"[+] BATCH HOÀN TẤT trong {time_str} ({total_elapsed:.1f}s) | Thành công: {done}/{total} | Lỗi: {failed}/{total}")
+            msg = f"Đã xử lý xong hàng loạt trong {time_str}!\n- Thành công: {done}/{total}\n- Lỗi: {failed}/{total}"
             messagebox.showinfo("Batch Hoàn Tất", msg)
 
         self.after(0, finish_ui)
@@ -1671,46 +1718,116 @@ class CapCutStudioApp(ctk.CTk):
         q = self.exp_search_entry.get().strip().lower()
 
         # Header
-        th = ctk.CTkFrame(self.exp_scroll, height=32, fg_color="#181a20", corner_radius=6)
-        th.pack(fill="x", pady=(0, 4))
-        ctk.CTkLabel(th, text="File Name", width=280, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=12)
-        ctk.CTkLabel(th, text="Size", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        ctk.CTkLabel(th, text="Date Modified", width=160, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        ctk.CTkLabel(th, text="Status", anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", fill="x", expand=True)
+        th = ctk.CTkFrame(self.exp_scroll, height=34, fg_color="#181a20", corner_radius=6)
+        th.pack(fill="x", pady=(0, 6))
+        ctk.CTkLabel(th, text="File Name", width=340, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(12, 6))
+        ctk.CTkLabel(th, text="Size", width=95, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=6)
+        ctk.CTkLabel(th, text="Date Modified", width=150, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=6)
+        ctk.CTkLabel(th, text="Status", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=6)
+        ctk.CTkLabel(th, text="Actions", anchor="e", font=ctk.CTkFont(size=12, weight="bold")).pack(side="right", padx=20)
 
+        project_root = Path(__file__).resolve().parent.parent
         dirs_to_scan = [
             Path(DEFAULT_OUTPUT_DIR).resolve(),
-            Path(__file__).resolve().parent,
+            project_root / "output",
+            project_root,
         ]
         seen_paths = set()
         mp4_files = []
         for d in dirs_to_scan:
-            if d.exists():
+            if d.exists() and d.is_dir():
                 for f in d.glob("*.mp4"):
                     abs_p = str(f.resolve())
-                    if abs_p not in seen_paths:
+                    if abs_p not in seen_paths and not f.name.startswith("temp_"):
                         seen_paths.add(abs_p)
                         mp4_files.append(f)
 
         mp4_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
 
-        for f in mp4_files[:60]:
-            if q and q not in f.name.lower():
-                continue
+        matching_files = [f for f in mp4_files if not q or q in f.name.lower()]
 
+        if not matching_files:
+            empty_frame = ctk.CTkFrame(self.exp_scroll, fg_color="transparent")
+            empty_frame.pack(fill="x", pady=40)
+            msg = "Không tìm thấy video phù hợp với từ khóa." if q else "Chưa có video nào trong thư mục xuất."
+            ctk.CTkLabel(
+                empty_frame,
+                text=msg,
+                font=ctk.CTkFont(size=13),
+                text_color=CLR_TXT_MUTED,
+            ).pack()
+            return
+
+        for f in matching_files[:60]:
             size_mb = f.stat().st_size / (1024 * 1024)
+            size_str = f"{size_mb / 1024:.2f} GB" if size_mb >= 1024 else f"{size_mb:.2f} MB"
             mtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(f.stat().st_mtime))
 
-            row = ctk.CTkFrame(self.exp_scroll, height=38, fg_color="#23262d", corner_radius=6)
+            row = ctk.CTkFrame(self.exp_scroll, height=40, fg_color="#23262d", corner_radius=6)
             row.pack(fill="x", pady=2)
 
-            ctk.CTkLabel(row, text=f.name, width=280, anchor="w", font=ctk.CTkFont(size=13, weight="bold"), text_color=CLR_PRIMARY).pack(side="left", padx=12)
-            ctk.CTkLabel(row, text=f"{size_mb:.2f} MB", width=110, anchor="w", font=ctk.CTkFont(size=12)).pack(side="left")
-            ctk.CTkLabel(row, text=mtime, width=160, anchor="w", font=ctk.CTkFont(size=12), text_color=CLR_TXT_MUTED).pack(side="left")
-            ctk.CTkLabel(row, text="● Done", anchor="w", font=ctk.CTkFont(size=12, weight="bold"), text_color=CLR_SUCCESS).pack(side="left", fill="x", expand=True)
+            disp_name = f.name if len(f.name) <= 44 else f"{f.name[:25]}...{f.name[-15:]}"
+            name_lbl = ctk.CTkLabel(
+                row,
+                text=disp_name,
+                width=340,
+                anchor="w",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=CLR_PRIMARY,
+            )
+            name_lbl.pack(side="left", padx=(12, 6))
 
-            play_btn = ctk.CTkButton(row, text="Play", width=65, height=26, fg_color="#0284c7", hover_color="#0369a1", command=lambda p=str(f): os.startfile(p) if sys.platform == "win32" else None)
-            play_btn.pack(side="right", padx=10)
+            ctk.CTkLabel(row, text=size_str, width=95, anchor="w", font=ctk.CTkFont(size=12)).pack(side="left", padx=6)
+            ctk.CTkLabel(row, text=mtime, width=150, anchor="w", font=ctk.CTkFont(size=12), text_color=CLR_TXT_MUTED).pack(side="left", padx=6)
+            ctk.CTkLabel(row, text="● Done", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold"), text_color=CLR_SUCCESS).pack(side="left", padx=6)
+
+            actions_f = ctk.CTkFrame(row, fg_color="transparent")
+            actions_f.pack(side="right", padx=10)
+
+            # Play Button
+            play_btn = ctk.CTkButton(
+                actions_f,
+                text="▶ Play",
+                width=60,
+                height=26,
+                fg_color="#0284c7",
+                hover_color="#0369a1",
+                command=lambda p=str(f): os.startfile(p) if sys.platform == "win32" else None,
+            )
+            play_btn.pack(side="left", padx=3)
+
+            # Locate in Explorer
+            locate_btn = ctk.CTkButton(
+                actions_f,
+                text="📁 Vị trí",
+                width=64,
+                height=26,
+                fg_color="#334155",
+                hover_color="#475569",
+                command=lambda p=str(f): subprocess.run(f'explorer /select,"{p}"', shell=True),
+            )
+            locate_btn.pack(side="left", padx=3)
+
+            # Delete Button
+            del_btn = ctk.CTkButton(
+                actions_f,
+                text="🗑 Xóa",
+                width=54,
+                height=26,
+                fg_color="#7f1d1d",
+                hover_color="#991b1b",
+                command=lambda p=f: self._delete_export_file(p),
+            )
+            del_btn.pack(side="left", padx=3)
+
+    def _delete_export_file(self, target_file: Path):
+        if messagebox.askyesno("Xác nhận xóa", f"Bạn có chắc muốn xóa vĩnh viễn file này khỏi ổ đĩa không?\n\n{target_file.name}"):
+            try:
+                target_file.unlink(missing_ok=True)
+                self._refresh_exports_table()
+                self._log(f"[Exports] Đã xóa file: {target_file.name}")
+            except Exception as e:
+                messagebox.showerror("Lỗi", f"Không thể xóa file: {e}")
 
     def _open_output_folder(self):
         folder = Path(DEFAULT_OUTPUT_DIR).resolve()
@@ -1983,6 +2100,7 @@ class CapCutStudioApp(ctk.CTk):
             messagebox.showwarning("No Videos", f"Không tìm thấy video nào trong:\n{in_path}")
             return
 
+        self._start_workbench_timer()
         threading.Thread(target=self._run_pipeline_worker, args=(videos,), daemon=True).start()
 
     def _run_pipeline_worker(self, videos: List[str]):
@@ -2046,6 +2164,7 @@ class CapCutStudioApp(ctk.CTk):
         def process_single(vp: str) -> bool:
             name = Path(vp).name
             self._log(f"[*] Processing: {name}")
+            t_vid_start = time.time()
 
             draft_params = {
                 "seg": seg,
@@ -2074,20 +2193,24 @@ class CapCutStudioApp(ctk.CTk):
             if mode == "local":
                 draft_content, _, err = make_draft(vp=vp, **draft_params)
                 if err:
+                    t_vid_elapsed = time.time() - t_vid_start
+                    t_vid_str = self._format_elapsed(t_vid_elapsed)
                     with lock:
                         fails.append(f"{name}: {err}")
                         counter[0] += 1
                         pct = int(counter[0] / len(videos) * 100)
-                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Failed: {name}")
+                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Failed ({t_vid_str}): {name}")
                     return False
 
                 d_name, d_dir = save_local_capcut_draft(vp, draft_content)
+                t_vid_elapsed = time.time() - t_vid_start
+                t_vid_str = self._format_elapsed(t_vid_elapsed)
                 with lock:
                     successes.append(name)
                     counter[0] += 1
                     pct = int(counter[0] / len(videos) * 100)
-                    self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Draft created: {d_name}")
-                self._log(f"[+] Local Draft Ready: {d_name}")
+                    self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Draft created ({t_vid_str}): {d_name}")
+                self._log(f"[+] Local Draft Ready in {t_vid_str} ({t_vid_elapsed:.1f}s): {d_name}")
                 return True
             else:
                 out_mp4 = str(output_dir / f"rendered_{Path(vp).stem}.mp4")
@@ -2102,6 +2225,7 @@ class CapCutStudioApp(ctk.CTk):
                     cap_style = getattr(self, "caption_style_combo", None) and self.caption_style_combo.get() or "TikTok Viral (Vàng viền đen)"
 
                     use_auto_chunk = getattr(self, "auto_chunk_var", None) and self.auto_chunk_var.get()
+                    use_crf = getattr(self, "compress_crf_var", None) and bool(self.compress_crf_var.get())
 
                     if use_auto_chunk:
                         downloaded = render_video_auto_chunked_cloud(
@@ -2115,10 +2239,22 @@ class CapCutStudioApp(ctk.CTk):
                             auto_caption=auto_cap,
                             caption_language=cap_lang,
                             caption_style=cap_style,
+                            compress_crf=use_crf,
+                            crf=24,
                             log_cb=self._log,
                             progress_cb=render_sub_cb,
                         )
                     else:
+                        if draft_params.get("vocal_sep"):
+                            self._log("[*] Kích hoạt CapCut AI Vocal Separation: Đang tách giọng nói...")
+                            try:
+                                from core.vocal_separator import CapCutVocalSeparator
+                                separator = CapCutVocalSeparator()
+                                v_wav = separator.separate_video(vp, log_cb=self._log)
+                                draft_params["vocal_path"] = v_wav
+                            except Exception as v_err:
+                                self._log(f"[!] Cảnh báo: Lỗi tách vocal ({v_err}), render âm thanh gốc...")
+
                         draft_content, _, err = make_draft(vp=vp, **draft_params)
                         if err:
                             raise RuntimeError(f"Lỗi tạo draft: {err}")
@@ -2129,30 +2265,37 @@ class CapCutStudioApp(ctk.CTk):
                             output_mp4=out_mp4,
                             overlay_path=overlay_path,
                             bgm_path=bgm_path,
+                            vocal_path=draft_params.get("vocal_path", ""),
                             definition=definition,
                             fps=fps,
                             auto_caption=auto_cap,
                             caption_language=cap_lang,
                             caption_style=cap_style,
+                            compress_crf=use_crf,
+                            crf=24,
                             log_cb=self._log,
                             progress_cb=render_sub_cb,
                         )
 
+                    t_vid_elapsed = time.time() - t_vid_start
+                    t_vid_str = self._format_elapsed(t_vid_elapsed)
                     with lock:
                         successes.append(name)
                         counter[0] += 1
                         pct = int(counter[0] / len(videos) * 100)
-                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Rendered: {name}")
-                    self._log(f"[+] Cloud Render Succeeded: {downloaded}")
+                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Rendered ({t_vid_str}): {name}")
+                    self._log(f"[+] Cloud Render Succeeded in {t_vid_str} ({t_vid_elapsed:.1f}s): {downloaded}")
                     return True
 
                 except Exception as exc:
+                    t_vid_elapsed = time.time() - t_vid_start
+                    t_vid_str = self._format_elapsed(t_vid_elapsed)
                     with lock:
                         fails.append(f"{name}: {exc}")
                         counter[0] += 1
                         pct = int(counter[0] / len(videos) * 100)
-                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Render Error: {name}")
-                    self._log(f"[-] Render Error: {name} -> {exc}")
+                        self._update_progress(pct, f"[{counter[0]}/{len(videos)}] Render Error ({t_vid_str}): {name}")
+                    self._log(f"[-] Render Error after {t_vid_str} ({t_vid_elapsed:.1f}s): {name} -> {exc}")
                     return False
 
         with ThreadPoolExecutor(max_workers=n_threads) as executor:
@@ -2163,20 +2306,77 @@ class CapCutStudioApp(ctk.CTk):
         self.after(0, self._refresh_exports_table)
         self._update_progress(100, f"Completed: {len(successes)}/{len(videos)} videos successful")
 
-        summary_msg = f"Hoàn thành {len(successes)}/{len(videos)} video."
-        if fails:
-            summary_msg += "\n\nLỗi:\n" + "\n".join(fails[:5])
-
         self.is_processing = False
         def finish_job():
+            self._stop_workbench_timer(success=(len(fails) == 0))
             self._on_output_mode_changed()
             self.primary_action_btn.configure(
                 state="normal",
                 text="▶ CREATE & RENDER" if self.export_mode.get() == "cloud" else "▶ CREATE DRAFTS",
             )
+            total_elapsed = time.time() - self._workbench_start_time if self._workbench_start_time > 0 else 0
+            total_time_str = self._format_elapsed(total_elapsed)
+            self._log(f"[+] TOÀN BỘ TIẾN TRÌNH HOÀN TẤT trong {total_time_str} ({total_elapsed:.1f}s) cho {len(successes)}/{len(videos)} video")
+            summary_msg = f"Hoàn thành {len(successes)}/{len(videos)} video trong {total_time_str} ({total_elapsed:.1f}s)."
+            if fails:
+                summary_msg += "\n\nLỗi:\n" + "\n".join(fails[:5])
             messagebox.showinfo("Job Finished", summary_msg)
 
         self.after(0, finish_job)
+
+    @staticmethod
+    def _format_elapsed(seconds: float) -> str:
+        s = max(0, int(seconds))
+        m, s = divmod(s, 60)
+        h, m = divmod(m, 60)
+        if h > 0:
+            return f"{h:02d}:{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}"
+
+    def _start_workbench_timer(self):
+        self._workbench_start_time = time.time()
+        self.queue_timer_lbl.configure(text="⏱ 00:00", text_color="#38bdf8")
+        self._tick_workbench_timer()
+
+    def _tick_workbench_timer(self):
+        if not getattr(self, "is_processing", False):
+            return
+        elapsed = time.time() - self._workbench_start_time
+        self.queue_timer_lbl.configure(text=f"⏱ {self._format_elapsed(elapsed)}")
+        self._workbench_timer_id = self.after(1000, self._tick_workbench_timer)
+
+    def _stop_workbench_timer(self, success: bool = True):
+        if self._workbench_timer_id:
+            try:
+                self.after_cancel(self._workbench_timer_id)
+            except Exception:
+                pass
+            self._workbench_timer_id = None
+        elapsed = time.time() - self._workbench_start_time if self._workbench_start_time > 0 else 0
+        color = "#10b981" if success else "#ef4444"
+        self.queue_timer_lbl.configure(text=f"⏱ {self._format_elapsed(elapsed)}", text_color=color)
+
+    def _start_batch_timer(self):
+        self._batch_start_time = time.time()
+        self.batch_timer_lbl.configure(text="⏱ 00:00", text_color="#38bdf8")
+        self._tick_batch_timer()
+
+    def _tick_batch_timer(self):
+        if not getattr(self, "batch_running", False):
+            return
+        elapsed = time.time() - self._batch_start_time
+        self.batch_timer_lbl.configure(text=f"⏱ {self._format_elapsed(elapsed)}")
+        self._batch_timer_id = self.after(1000, self._tick_batch_timer)
+
+    def _stop_batch_timer(self):
+        if self._batch_timer_id:
+            try:
+                self.after_cancel(self._batch_timer_id)
+            except Exception:
+                pass
+            self._batch_timer_id = None
+        elapsed = time.time() - self._batch_start_time if self._batch_start_time > 0 else 0
+        self.batch_timer_lbl.configure(text=f"⏱ {self._format_elapsed(elapsed)} (Xong)", text_color="#10b981")
 
     def _update_progress(self, pct: int, status_text: str):
         def update():
@@ -2186,8 +2386,16 @@ class CapCutStudioApp(ctk.CTk):
         self.after(0, update)
 
     def _log(self, text: str):
+        now_str = time.strftime("[%H:%M:%S]")
+        if text.startswith("[") and len(text) >= 10 and text[3] == ":" and text[6] == ":":
+            log_line = text
+        else:
+            log_line = f"{now_str} {text}"
+
+        print(log_line, flush=True)
+
         def append():
-            self.log_textbox.insert("end", f"{text}\n")
+            self.log_textbox.insert("end", f"{log_line}\n")
             self.log_textbox.see("end")
         self.after(0, append)
 
