@@ -344,7 +344,7 @@ def make_draft(
             "sub_type": 0,
             "bind_segment_id": "",
             "transparent_params": "",
-            "path": effect_path.replace("\\", "/"),
+            "path": effect_path.replace("\\", "/") if (effect_path and os.path.exists(effect_path)) else "",
             "value": 1.0,
             "category_id": "1111",
             "category_name": "Hiệu ứng video",
@@ -356,6 +356,8 @@ def make_draft(
             "adjust_params": [
                 {"name": "effects_adjust_speed", "value": effect_speed, "default_value": 0.33},
                 {"name": "effects_adjust_background_animation", "value": effect_air, "default_value": 1.0},
+                {"name": "effects_adjust_atmosphere", "value": effect_air, "default_value": 1.0},
+                {"name": "effects_adjust_intensity", "value": effect_air, "default_value": 1.0},
             ],
             "time_range": None,
             "formula_id": "",
@@ -1079,6 +1081,10 @@ def render_draft_cloud(
         draft_content["materials"]["videos"][0]["version"] = 400000
         draft_content["materials"]["videos"][0]["new_version"] = "127.0.0"
 
+    # Sanitize video_effects paths for cloud render (cloud nodes use cloud asset library)
+    for veff in draft_content.get("materials", {}).get("video_effects", []):
+        veff["path"] = ""
+
     # 1.5 Auto-caption recognition & injection if enabled
     if auto_caption:
         log(f"[BƯỚC 1.5/4] Đang gửi âm thanh lên CapCut Cloud AI nhận dạng phụ đề ({caption_language})...")
@@ -1252,7 +1258,7 @@ def render_video_auto_chunked_cloud(
     if dur <= (chunk_duration + 30):
         # Video length <= chunk limit: direct 1-task cloud render
         log(f"[*] Thời lượng video ({dur:.1f}s <= {chunk_duration+30}s). Render trực tiếp 1 task Cloud...")
-        draft_content, err, _ = make_draft(vp=str(in_file), **draft_params)
+        draft_content, _, err = make_draft(vp=str(in_file), **draft_params)
         if err:
             raise RuntimeError(f"Lỗi tạo draft: {err}")
         if full_utterances:
@@ -1315,7 +1321,7 @@ def render_video_auto_chunked_cloud(
             slice_audio(vocal_full_path, c_start_s, c_dur_s, c_vocal_wav)
             c_params["vocal_path"] = c_vocal_wav
 
-        c_draft, c_err, _ = make_draft(vp=c_path, **c_params)
+        c_draft, _, c_err = make_draft(vp=c_path, **c_params)
         if c_err:
             raise RuntimeError(f"Lỗi tạo draft cho chunk {c_idx}: {c_err}")
 

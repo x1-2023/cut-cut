@@ -2119,10 +2119,11 @@ class CapCutStudioApp(ctk.CTk):
         except Exception:
             n_threads = 4
 
+        mode = self.export_mode.get()
         eff_name = self.effect_combo.get()
         eff_item = next((e for e in self.effects_catalog.list_all() if e["name"] == eff_name), None)
         eff_id = eff_item["id"] if eff_item else ""
-        eff_path = self.effects_catalog.get_local_effect_path(eff_id) or ""
+        eff_path = "" if mode == "cloud" else (self.effects_catalog.get_local_effect_path(eff_id) or "")
 
         eff_speed = float(self.eff_speed_slider.get()) / 100.0
         eff_air = float(self.eff_air_slider.get()) / 100.0
